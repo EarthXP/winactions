@@ -1,0 +1,38 @@
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/winactions"]
+
+[tool.hatch.version]
+path = "src/winactions/_version.py"
+pattern = '__version__ = "(?P<version>[^"]+)"'
+
+[project]
+name = "winactions"
+dynamic = ["version"]
+description = "Windows UI Automation Toolkit for AI Agents"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2.0",
+    "pywinauto>=0.6.8",
+    "pyautogui>=0.9.54",
+    "psutil>=5.9",
+    "comtypes>=1.2",
+    "uiautomation>=2.0.18",
+]
+
+[project.optional-dependencies]
+screenshot = ["Pillow>=10.0"]
+cli = ["click>=8.0"]
+rich = ["rich>=13.0"]
+vision = ["anthropic>=0.40", "Pillow>=10.0"]
+dev = ["pytest", "Pillow>=10.0", "click>=8.0", "rich>=13.0", "anthropic>=0.40"]
+
+[project.scripts]
+winctl = "winactions.cli.app:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

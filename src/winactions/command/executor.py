@@ -1,0 +1,112 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+"""ActionExecutor — executes ActionCommandInfo against an AppPuppeteer.
+
+Adapted from ufo/automator/action_execution.py.
+"""
+
+import logging
+import platform
+from typing import Any, Dict, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING or platform.system() == "Windows":
+    from pywinauto.controls.uiawrapper import UIAWrapper
+else:
+    UIAWrapper = Any
+
+from winactions._utils import coordinate_adjusted, is_json_serializable
+from winactions.models import ActionCommandInfo, BaseControlLog
+from winactions.command.puppeteer import AppPuppeteer
+
+
+class ActionExecutor:
+    """Execution logic for ActionCommandInfo."""
+
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+
+    @staticmethod
+    def _control_validation(control: UIAWrapper) -> bool:
+        try:
+            control.is_enabled()
+            if control.is_enabled() and control.is_visible():
+                return True
+            else:
+                return False
+        except Exception:
+            return False
+
+    @staticmethod
+    def _get_control_log(
+        action: ActionCommandInfo,
+        control_selected: Optional[UIAWrapper] = None,
+        application_window: Optional[UIAWrapper] = None,
+    ) -> BaseControlLog:
+        if not control_selected or not application_window:
+            return BaseControlLog()
+
+        control_coordinates = coordinate_adjusted(
+            application_window.rectangle(), control_selected.rectangle()
+        )
+
+        control_log = BaseControlLog(
+            control_name=control_selected.element_info.name,
+            control_class=control_selected.element_info.class_name,
+            control_type=control_selected.element_info.control_type,
+            control_matched=(
+                control_selected.element_info.name == action.target.name
+                if action.target
+                else False
+            ),
+            control_automation_id=control_selected.element_info.automation_id,
+            control_friendly_class_name=control_selected.friendly_class_name(),
+            control_coordinates={
+                "left": control_coordinates[0],
+                "top": control_coordinates[1],
+                "right": control_coordinates[2],
+                "bottom": control_coordinates[3],
+            },
+        )
+        return control_log
+
+    def execute(
+        self,
+        action: ActionCommandInfo,
+        puppeteer: AppPuppeteer,
+        control_dict: Dict[str, UIAWrapper],
+        application_window: Optional[UIAWrapper] = None,
+    ) -> Any:
+        control_id = action.target.id if action.target else None
+        control_selected = control_dict.get(control_id, None)
+
+        if control_selected is not None and not ActionExecutor._control_validation(
+            control_selected
+        ):
+            raise ValueError(
+                f"Control {control_id}: {action.target.name} is not available or "
+                f"not interactable for the action {action.action_representation()}, "
+                "please refresh the application state to get the latest interactable "
+                "control information."
+            )
+
+        if application_window:
+            puppeteer.receiver_manager.create_ui_control_receiver(
+                control_selected, application_window
+            )
+            self.logger.info(
+                f"Create AppPuppeteer for window: {application_window.window_text()}"
+            )
+
+        self.logger.info(f"Available commands: {puppeteer.list_commands()}")
+
+        if not action.function:
+            return None
+
+        try:
+            result = puppeteer.execute_command(action.function, action.arguments)
+            if not is_json_serializable(result):
+                result = ""
+            return result
+        except Exception as e:
+            raise RuntimeError(f"Failed to execute action {action.function}: {e}")
