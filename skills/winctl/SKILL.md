@@ -1,3 +1,8 @@
+---
+name: winctl
+description: Automates Windows desktop applications via indexed UI controls. Use when inspecting controls, clicking, typing, dragging, scrolling, reading UI state, or any task targeting a Windows desktop application.
+---
+
 # winctl — Windows UI Automation CLI for AI Agents
 
 ## Overview
@@ -339,20 +344,20 @@ winctl --session outlook drag-at --duration 2.0 -- -3000 500 -2800 500
 
 ```
 Element visible in `state` output?
-  YES → 【Tier 1】Use index commands: click/input/drag <index>
+  YES → [Tier 1] Use index commands: click/input/drag <index>
         Need coordinates? → `get rect <index>` or `inspect <index>`
   NO (UIA-invisible element) →
-    ├─ 【Tier 1+】Run `--infer state` (LLM structural inference, ~$0.003)
-    │    Found with rect? → Use click-at/drag-at with rect values (pixel-precise)
-    │
-    ├─ 【Tier 2】Run `--vision state` (Vision API, ~$0.01)
-    │    Found? + target > 20px → Use click-at/drag-at with rect values
-    │
-    ├─ 【Tier 3a】Nearby UIA controls available as anchors?
-    │    YES → `inspect <neighbor>` → compute coordinates from rect → drag-at
-    │          (pixel-precise, free — fallback for Tier 1+)
-    │
-    └─ 【Tier 3b】Last resort: screenshot → estimate coordinates → click-at
+    |-- [Tier 1+] Run `--infer state` (LLM structural inference, ~$0.003)
+    |    Found with rect? → Use click-at/drag-at with rect values (pixel-precise)
+    |
+    |-- [Tier 2] Run `--vision state` (Vision API, ~$0.01)
+    |    Found? + target > 20px → Use click-at/drag-at with rect values
+    |
+    |-- [Tier 3a] Nearby UIA controls available as anchors?
+    |    YES → `inspect <neighbor>` → compute coordinates from rect → drag-at
+    |          (pixel-precise, free — fallback for Tier 1+)
+    |
+    +-- [Tier 3b] Last resort: screenshot → estimate coordinates → click-at
 ```
 
 ## Common Pitfalls
@@ -365,14 +370,14 @@ These are real mistakes observed during E2E testing. Each cost multiple retry cy
 
 In non-session mode:
 ```bash
-# ❌ WRONG — focus drifted to the message list between calls
+# WRONG — focus drifted to the message list between calls
 winctl --window outlook click 278          # click table cell (process A)
 winctl --window outlook keys "ctrl+a"      # Ctrl+A went to message list! (process B)
 
-# ✅ CORRECT (non-session) — --target focuses the control in the same process
+# CORRECT (non-session) — --target focuses the control in the same process
 winctl --window outlook keys --target 311 "ctrl+a"
 
-# ✅ CORRECT (session) — focus is continuous, no drift
+# CORRECT (session) — focus is continuous, no drift
 winctl --session outlook click 278
 winctl --session outlook keys "ctrl+a"     # goes to the right control
 ```
@@ -382,11 +387,11 @@ winctl --session outlook keys "ctrl+a"     # goes to the right control
 ### Pitfall 2: Mixing indexes from different flag modes
 
 ```bash
-# ❌ WRONG — indexes from --infer don't match plain mode
+# WRONG — indexes from --infer don't match plain mode
 winctl --infer --window outlook state      # [274] = RowBorder (virtual element)
 winctl --window outlook inspect 274        # inspects a Pane, not the RowBorder!
 
-# ✅ CORRECT — use rect from inferred output for coordinate commands
+# CORRECT — use rect from inferred output for coordinate commands
 winctl --infer --session outlook state
 # [305] [ResizeHandle] "Table resize handle" rect=[-2632, 583, -2622, 603]
 winctl --session outlook drag-at -- -2627 593 -2427 593    # use rect directly
@@ -400,13 +405,13 @@ winctl --session outlook drag-at -- -2627 593 -2427 593    # use rect directly
 
 In non-session mode:
 ```bash
-# ❌ WRONG — several commands elapsed since inspect, table may have moved
+# WRONG — several commands elapsed since inspect, table may have moved
 winctl --window outlook inspect 283        # get coordinates
 winctl --window outlook click 277          # click a cell (UI may shift)
 winctl --window outlook keys "ctrl+a"      # select (UI may shift again)
 winctl --window outlook drag-at -- -3228 2090 -3128 2140  # coordinates are stale!
 
-# ✅ CORRECT — inspect immediately before drag
+# CORRECT — inspect immediately before drag
 winctl --window outlook keys --target 311 "ctrl+a"
 winctl --window outlook inspect 283        # get FRESH coordinates right before drag
 winctl --window outlook drag-at -- -3228 2090 -3128 2140
@@ -415,36 +420,35 @@ winctl --window outlook drag-at -- -3228 2090 -3128 2140
 ### Pitfall 4: Closing the wrong window due to title substring match
 
 ```bash
-# ❌ WRONG — "计算器" matches both the Calculator app AND a Claude Code window
-#    whose title also contains "计算器" (because you're working on a Calculator task)
-winctl --window 计算器 close          # might close your Claude Code window!
+# WRONG — matches both the Calculator app AND a Claude Code window
+winctl --window Calculator close          # might close your Claude Code window!
 
-# ✅ CORRECT — use `windows` first to verify which window you're targeting
+# CORRECT — use `windows` first to verify which window you're targeting
 winctl windows
-# [1] 计算器 (Calculator.exe)
-# [2] "winctl 计算器自动化测试" (claude.exe)
+# [1] Calculator (Calculator.exe)
+# [2] "winctl automation test" (claude.exe)
 
 # Confirm the process name matches the intended app, then close
 winctl --window Calculator.exe close  # use process name, not title
 ```
 
-**Why**: `--window` does substring matching on the window title. If multiple windows contain the same substring (e.g. an app named "计算器" and a dev tool window discussing "计算器"), you may close the wrong one. **Always run `winctl windows` first and verify by process name or full title before closing.**
+**Why**: `--window` does substring matching on the window title. If multiple windows contain the same substring, you may close the wrong one. **Always run `winctl windows` first and verify by process name or full title before closing.**
 
 ### Pitfall 5: UWP apps launched from admin have empty UIA trees
 
 ```bash
-# ❌ WRONG — admin process launches UWP in broken state (0 controls visible)
+# WRONG — admin process launches UWP in broken state (0 controls visible)
 winctl launch calculator
-winctl --window 计算器 state
-# Window: "计算器" (ApplicationFrameHost.exe)
+winctl --window Calculator state
+# Window: "Calculator" (ApplicationFrameHost.exe)
 # (no controls!)
 
-# ✅ CORRECT — launch via URI protocol (explorer.exe auto-downgrades to Medium integrity)
+# CORRECT — launch via URI protocol (explorer.exe auto-downgrades to Medium integrity)
 powershell -NoProfile -Command "Start-Process 'calculator:'"
 winctl wait 3
-winctl --window 计算器 state
-# Window: "计算器" (ApplicationFrameHost.exe)
-# [1] [Window] "计算器"
+winctl --window Calculator state
+# Window: "Calculator" (ApplicationFrameHost.exe)
+# [1] [Window] "Calculator"
 # ... (68 controls)
 ```
 
@@ -455,21 +459,21 @@ winctl --window 计算器 state
 ### Pitfall 6: Dynamic UI causes index drift in non-session mode
 
 ```bash
-# ❌ WRONG — Calculator adds an expression text control after "1+",
+# WRONG — Calculator adds an expression text control after "1+",
 #    shifting ALL subsequent indexes by +1
-winctl --window 计算器 state         # [57]="一", [52]="加", [53]="等于"
-winctl --window 计算器 click 57      # "一" ✓
-winctl --window 计算器 click 52      # "加" ✓ — but now expression text appears, indexes shift!
-winctl --window 计算器 click 57      # expects "一", gets "零" ✗ (shifted +1)
-winctl --window 计算器 click 53      # expects "等于", gets "加" ✗ (shifted +1)
+winctl --window Calculator state         # [57]="1", [52]="+", [53]="="
+winctl --window Calculator click 57      # "1" OK
+winctl --window Calculator click 52      # "+" OK — but now expression text appears, indexes shift!
+winctl --window Calculator click 57      # expects "1", gets "0" (shifted +1)
+winctl --window Calculator click 53      # expects "=", gets "+" (shifted +1)
 # Result: 1 + 0 + (wrong!)
 
-# ✅ CORRECT — session mode freezes control_map as COM object references
-winctl --session calc --window 计算器 state  # [57]="一", [52]="加", [53]="等于"
-winctl --session calc click 57       # "一" ✓ — COM ref points to actual button
-winctl --session calc click 52       # "加" ✓ — UI changes, but COM refs are stable
-winctl --session calc click 57       # "一" ✓ — still the same COM object!
-winctl --session calc click 53       # "等于" ✓
+# CORRECT — session mode freezes control_map as COM object references
+winctl --session calc --window Calculator state  # [57]="1", [52]="+", [53]="="
+winctl --session calc click 57       # "1" OK — COM ref points to actual button
+winctl --session calc click 52       # "+" OK — UI changes, but COM refs are stable
+winctl --session calc click 57       # "1" OK — still the same COM object!
+winctl --session calc click 53       # "=" OK
 # Result: 2 (correct!)
 ```
 
